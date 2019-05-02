@@ -188,24 +188,16 @@ func (a *AndroidApp) shouldUncompressDex(ctx android.ModuleContext) bool {
 		return true
 	}
 
-	// Uncompress dex in APKs of privileged apps, and modules used by privileged apps
-	// (even for unbundled builds, they may be preinstalled as prebuilts).
-	if ctx.Config().UncompressPrivAppDex() &&
-		(Bool(a.appProperties.Privileged) ||
-			inList(ctx.ModuleName(), ctx.Config().ModulesLoadedByPrivilegedModules())) {
-		return true
-	}
-
 	if ctx.Config().UnbundledBuild() {
 		return false
 	}
 
-	// Uncompress if the dex files is preopted on /system.
-	if !a.dexpreopter.dexpreoptDisabled(ctx) && (ctx.Host() || !odexOnSystemOther(ctx, a.dexpreopter.installPath)) {
+	// Uncompress dex in APKs of privileged apps
+	if ctx.Config().UncompressPrivAppDex() && Bool(a.appProperties.Privileged) {
 		return true
 	}
 
-	return false
+	return shouldUncompressDex(ctx, &a.dexpreopter)
 }
 
 func (a *AndroidApp) aaptBuildActions(ctx android.ModuleContext) {
@@ -679,4 +671,149 @@ func OverrideAndroidAppModuleFactory() android.Module {
 	android.InitAndroidModule(m)
 	android.InitOverrideModule(m)
 	return m
+}
+
+type AndroidAppImport struct {
+	android.ModuleBase
+	android.DefaultableModuleBase
+	prebuilt android.Prebuilt
+
+	properties AndroidAppImportProperties
+
+	outputFile  android.Path
+	certificate *Certificate
+
+	dexpreopter
+}
+
+type AndroidAppImportProperties struct {
+	// A prebuilt apk to import
+	Apk string
+
+	// The name of a certificate in the default certificate directory, blank to use the default
+	// product certificate, or an android_app_certificate module name in the form ":module".
+	Certificate *string
+
+	// Set this flag to true if the prebuilt apk is already signed. The certificate property must not
+	// be set for presigned modules.
+	Presigned *bool
+
+	// Specifies that this app should be installed to the priv-app directory,
+	// where the system will grant it additional privileges not available to
+	// normal apps.
+	Privileged *bool
+
+	// Names of modules to be overridden. Listed modules can only be other binaries
+	// (in Make or Soong).
+	// This does not completely prevent installation of the overridden binaries, but if both
+	// binaries would be installed by default (in PRODUCT_PACKAGES) the other binary will be removed
+	// from PRODUCT_PACKAGES.
+	Overrides []string
+}
+
+func (a *AndroidAppImport) DepsMutator(ctx android.BottomUpMutatorContext) {
+	cert := android.SrcIsModule(String(a.properties.Certificate))
+	if cert != "" {
+		ctx.AddDependency(ctx.Module(), certificateTag, cert)
+	}
+}
+
+func (a *AndroidAppImport) uncompressEmbeddedJniLibs(
+	ctx android.ModuleContext, inputPath android.Path, outputPath android.OutputPath) {
+	rule := android.NewRuleBuilder()
+	rule.Command().
+		Textf(`if (zipinfo %s 'lib/*.so' 2>/dev/null | grep -v ' stor ' >/dev/null) ; then`, inputPath).
+		Tool(ctx.Config().HostToolPath(ctx, "zip2zip")).
+		FlagWithInput("-i ", inputPath).
+		FlagWithOutput("-o ", outputPath).
+		FlagWithArg("-0 ", "'lib/**/*.so'").
+		Textf(`; else cp -f %s %s; fi`, inputPath, outputPath)
+	rule.Build(pctx, ctx, "uncompress-embedded-jni-libs", "Uncompress embedded JIN libs")
+}
+
+// Returns whether this module should have the dex file stored uncompressed in the APK.
+func (a *AndroidAppImport) shouldUncompressDex(ctx android.ModuleContext) bool {
+	if ctx.Config().UnbundledBuild() {
+		return false
+	}
+
+	// Uncompress dex in APKs of privileged apps
+	if ctx.Config().UncompressPrivAppDex() && Bool(a.properties.Privileged) {
+		return true
+	}
+
+	return shouldUncompressDex(ctx, &a.dexpreopter)
+}
+
+func (a *AndroidAppImport) GenerateAndroidBuildActions(ctx android.ModuleContext) {
+	if String(a.properties.Certificate) == "" && !Bool(a.properties.Presigned) {
+		ctx.PropertyErrorf("certificate", "No certificate specified for prebuilt")
+	}
+	if String(a.properties.Certificate) != "" && Bool(a.properties.Presigned) {
+		ctx.PropertyErrorf("certificate", "Certificate can't be specified for presigned modules")
+	}
+
+	_, certificates := collectAppDeps(ctx)
+
+	// TODO: LOCAL_EXTRACT_APK/LOCAL_EXTRACT_DPI_APK
+	// TODO: LOCAL_DPI_VARIANTS
+	// TODO: LOCAL_PACKAGE_SPLITS
+
+	srcApk := a.prebuilt.SingleSourcePath(ctx)
+
+	// TODO: Install or embed JNI libraries
+
+	// Uncompress JNI libraries in the apk
+	jnisUncompressed := android.PathForModuleOut(ctx, "jnis-uncompressed", ctx.ModuleName()+".apk")
+	a.uncompressEmbeddedJniLibs(ctx, srcApk, jnisUncompressed.OutputPath)
+
+	installDir := android.PathForModuleInstall(ctx, "app", a.BaseModuleName())
+	a.dexpreopter.installPath = installDir.Join(ctx, a.BaseModuleName()+".apk")
+	a.dexpreopter.isInstallable = true
+	a.dexpreopter.isPresignedPrebuilt = Bool(a.properties.Presigned)
+	a.dexpreopter.uncompressedDex = a.shouldUncompressDex(ctx)
+	dexOutput := a.dexpreopter.dexpreopt(ctx, jnisUncompressed)
+
+	// Sign or align the package
+	// TODO: Handle EXTERNAL
+	if !Bool(a.properties.Presigned) {
+		certificates = processMainCert(a.ModuleBase, *a.properties.Certificate, certificates, ctx)
+		if len(certificates) != 1 {
+			ctx.ModuleErrorf("Unexpected number of certificates were extracted: %q", certificates)
+		}
+		a.certificate = &certificates[0]
+		signed := android.PathForModuleOut(ctx, "signed", ctx.ModuleName()+".apk")
+		SignAppPackage(ctx, signed, dexOutput, certificates)
+		a.outputFile = signed
+	} else {
+		alignedApk := android.PathForModuleOut(ctx, "zip-aligned", ctx.ModuleName()+".apk")
+		TransformZipAlign(ctx, alignedApk, dexOutput)
+		a.outputFile = alignedApk
+	}
+
+	// TODO: Optionally compress the output apk.
+
+	ctx.InstallFile(installDir, a.BaseModuleName()+".apk", a.outputFile)
+
+	// TODO: androidmk converter jni libs
+}
+
+func (a *AndroidAppImport) Prebuilt() *android.Prebuilt {
+	return &a.prebuilt
+}
+
+func (a *AndroidAppImport) Name() string {
+	return a.prebuilt.Name(a.ModuleBase.Name())
+}
+
+// android_app_import imports a prebuilt apk with additional processing specified in the module.
+func AndroidAppImportFactory() android.Module {
+	module := &AndroidAppImport{}
+	module.AddProperties(&module.properties)
+	module.AddProperties(&module.dexpreoptProperties)
+
+	InitJavaModule(module, android.DeviceSupported)
+	android.InitSingleSourcePrebuiltModule(module, &module.properties.Apk)
+
+	return module
 }
