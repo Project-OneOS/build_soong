@@ -688,6 +688,8 @@ type AndroidAppImport struct {
 	certificate *Certificate
 
 	dexpreopter
+
+	installPath android.OutputPath
 }
 
 type AndroidAppImportProperties struct {
@@ -713,6 +715,9 @@ type AndroidAppImportProperties struct {
 	// binaries would be installed by default (in PRODUCT_PACKAGES) the other binary will be removed
 	// from PRODUCT_PACKAGES.
 	Overrides []string
+
+	// Optional name for the installed app. If unspecified, it is derived from the module name.
+	Filename *string
 }
 
 // Chooses a source APK path to use based on the module and product specs.
@@ -853,7 +858,8 @@ func (a *AndroidAppImport) GenerateAndroidBuildActions(ctx android.ModuleContext
 
 	// TODO: Optionally compress the output apk.
 
-	ctx.InstallFile(installDir, a.BaseModuleName()+".apk", a.outputFile)
+	a.installPath = ctx.InstallFile(installDir,
+		proptools.StringDefault(a.properties.Filename, a.BaseModuleName()+".apk"), a.outputFile)
 
 	// TODO: androidmk converter jni libs
 }
