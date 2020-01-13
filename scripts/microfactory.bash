@@ -59,7 +59,7 @@ function soong_build_go
     BUILDDIR=$(getoutdir) \
       SRCDIR=${TOP} \
       BLUEPRINTDIR=${TOP}/build/blueprint \
-      EXTRA_ARGS="-pkg-path android/soong=${TOP}/build/soong -pkg-path github.com/golang/protobuf=${TOP}/external/golang-protobuf -pkg-path caf/soong=${TOP}/vendor/caf/build/soong" \
+      EXTRA_ARGS="-pkg-path android/soong=${TOP}/build/soong -pkg-path github.com/golang/protobuf=${TOP}/external/golang-protobuf -pkg-path one/soong=${TOP}/vendor/one/build/soong" \
       build_go $@
 }
 

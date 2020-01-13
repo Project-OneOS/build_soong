@@ -20,7 +20,7 @@ import (
 	"runtime"
 	"strings"
 
-	"caf/soong/android"
+	"one/soong/android"
 
 	"github.com/google/blueprint/proptools"
 )
@@ -154,8 +154,8 @@ type variableProperties struct {
 		Device_support_hwfde_perf struct {
 			Cflags []string
 		}
-		// include CAF variables
-		Caf android.Product_variables
+		// include ONE variables
+		One android.Product_variables
 	} `android:"arch_variant"`
 }
 
