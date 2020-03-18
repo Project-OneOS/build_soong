@@ -22,11 +22,12 @@ import (
 type dexpreopter struct {
 	dexpreoptProperties DexpreoptProperties
 
-	installPath     android.OutputPath
-	uncompressedDex bool
-	isSDKLibrary    bool
-	isTest          bool
-	isInstallable   bool
+	installPath         android.OutputPath
+	uncompressedDex     bool
+	isSDKLibrary        bool
+	isTest              bool
+	isInstallable       bool
+        isPresignedPrebuilt bool
 
 	builtInstalled string
 }

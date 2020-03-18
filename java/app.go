@@ -309,6 +309,40 @@ func (a *AndroidApp) jniBuildActions(jniLibs []jniLib, ctx android.ModuleContext
 	return jniJarFile
 }
 
+// Reads and prepends a main cert from the default cert dir if it hasn't been set already, i.e. it
+// isn't a cert module reference. Also checks and enforces system cert restriction if applicable.
+func processMainCert(m android.ModuleBase, certPropValue string, certificates []Certificate, ctx android.ModuleContext) []Certificate {
+	if android.SrcIsModule(certPropValue) == "" {
+		var mainCert Certificate
+		if certPropValue != "" {
+			defaultDir := ctx.Config().DefaultAppCertificateDir(ctx)
+			mainCert = Certificate{
+				defaultDir.Join(ctx, certPropValue+".x509.pem"),
+				defaultDir.Join(ctx, certPropValue+".pk8"),
+			}
+		} else {
+			pem, key := ctx.Config().DefaultAppCertificate(ctx)
+			mainCert = Certificate{pem, key}
+		}
+		certificates = append([]Certificate{mainCert}, certificates...)
+	}
+
+	if !m.Platform() {
+		certPath := certificates[0].Pem.String()
+		systemCertPath := ctx.Config().DefaultAppCertificateDir(ctx).String()
+		if strings.HasPrefix(certPath, systemCertPath) {
+			enforceSystemCert := ctx.Config().EnforceSystemCertificate()
+			whitelist := ctx.Config().EnforceSystemCertificateWhitelist()
+
+			if enforceSystemCert && !inList(m.Name(), whitelist) {
+				ctx.PropertyErrorf("certificate", "The module in product partition cannot be signed with certificate in system.")
+			}
+		}
+	}
+
+	return certificates
+}
+
 func (a *AndroidApp) certificateBuildActions(certificateDeps []Certificate, ctx android.ModuleContext) []Certificate {
 	cert := a.getCertString(ctx)
 	certModule := android.SrcIsModule(cert)
@@ -400,7 +434,7 @@ func (a *AndroidApp) generateAndroidBuildActions(ctx android.ModuleContext) {
 
 	if ctx.ModuleName() == "framework-res" {
 		// framework-res.apk is installed as system/framework/framework-res.apk
-		installDir = android.PathForModuleInstall(ctx, "framework")
+		a.installDir = android.PathForModuleInstall(ctx, "framework")
 	} else if Bool(a.appProperties.Privileged) {
 		a.installDir = android.PathForModuleInstall(ctx, "priv-app", a.installApkName)
 	} else if ctx.InstallInTestcases() {
@@ -419,7 +453,7 @@ func (a *AndroidApp) generateAndroidBuildActions(ctx android.ModuleContext) {
 
 	dexJarFile := a.dexBuildActions(ctx)
 
-	jniLibs, certificateDeps := a.collectAppDeps(ctx)
+	jniLibs, certificateDeps := collectAppDeps(ctx)
 	jniJarFile := a.jniBuildActions(jniLibs, ctx)
 
 	if ctx.Failed() {
@@ -431,13 +465,13 @@ func (a *AndroidApp) generateAndroidBuildActions(ctx android.ModuleContext) {
 	// Build a final signed app package.
 	// TODO(jungjw): Consider changing this to installApkName.
 	packageFile := android.PathForModuleOut(ctx, ctx.ModuleName()+".apk")
-	CreateAppPackage(ctx, packageFile, a.exportPackage, jniJarFile, dexJarFile, certificates)
+	CreateAndSignAppPackage(ctx, packageFile, a.exportPackage, jniJarFile, dexJarFile, certificates)
 	a.outputFile = packageFile
 
 	for _, split := range a.aapt.splits {
 		// Sign the split APKs
 		packageFile := android.PathForModuleOut(ctx, ctx.ModuleName()+"_"+split.suffix+".apk")
-		CreateAppPackage(ctx, packageFile, split.path, nil, nil, certificates)
+		CreateAndSignAppPackage(ctx, packageFile, split.path, nil, nil, certificates)
 		a.extraOutputFiles = append(a.extraOutputFiles, packageFile)
 	}
 
@@ -453,7 +487,7 @@ func (a *AndroidApp) generateAndroidBuildActions(ctx android.ModuleContext) {
 	}
 }
 
-func (a *AndroidApp) collectAppDeps(ctx android.ModuleContext) ([]jniLib, []Certificate) {
+func collectAppDeps(ctx android.ModuleContext) ([]jniLib, []Certificate) {
 	var jniLibs []jniLib
 	var certificates []Certificate
 
@@ -764,7 +798,7 @@ func MergePropertiesFromVariant(ctx android.BaseModuleContext,
 		return
 	}
 
-	err := proptools.ExtendMatchingProperties([]interface{}{dst}, src.Interface(), nil, proptools.OrderAppend)
+        err := proptools.ExtendMatchingProperties([]interface{}{dst}, src.Interface(), nil, proptools.OrderAppend)
 	if err != nil {
 		if propertyErr, ok := err.(*proptools.ExtendPropertyError); ok {
 			ctx.PropertyErrorf(propertyErr.Property, "%s", propertyErr.Err.Error())
