@@ -137,7 +137,7 @@ var (
 
 	SDClang                  = false
 	SDClangPath              = ""
-	ForceSDClangOff          = false
+	ForceSDClangOff          = true
 
 	// prebuilts/clang default settings.
 	ClangDefaultBase         = "prebuilts/clang/host"
