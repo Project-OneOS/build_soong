@@ -138,6 +138,9 @@ func dumpMakeVars(ctx Context, config Config, goals, vars []string, write_soong_
 var BannerVars = []string{
 	"PLATFORM_VERSION_CODENAME",
 	"PLATFORM_VERSION",
+	"ONE_VERSION",
+	"ONE_TYPE",
+	"WITH_GAPPS",
 	"TARGET_PRODUCT",
 	"TARGET_BUILD_VARIANT",
 	"TARGET_BUILD_TYPE",
@@ -162,6 +165,7 @@ var BannerVars = []string{
 	"TARGET_BUILD_PDK",
 	"PDK_FUSION_PLATFORM_ZIP",
 	"PRODUCT_SOONG_NAMESPACES",
+        "QCOM_HARDWARE_VARIANT",
 }
 
 func Banner(make_vars map[string]string) string {

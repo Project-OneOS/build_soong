@@ -126,6 +126,26 @@ func (a *AndroidMkEntries) AddOptionalPath(name string, path OptionalPath) {
 	}
 }
 
+func (a *AndroidMkEntries) SetPaths(name string, paths Paths) {
+	if _, ok := a.EntryMap[name]; !ok {
+		a.entryOrder = append(a.entryOrder, name)
+	}
+	a.EntryMap[name] = paths.Strings()
+}
+
+func (a *AndroidMkEntries) SetOptionalPaths(name string, paths Paths) {
+	if len(paths) > 0 {
+		a.SetPaths(name, paths)
+	}
+}
+
+func (a *AndroidMkEntries) AddPaths(name string, paths Paths) {
+	if _, ok := a.EntryMap[name]; !ok {
+		a.entryOrder = append(a.entryOrder, name)
+	}
+	a.EntryMap[name] = append(a.EntryMap[name], paths.Strings()...)
+}
+
 func (a *AndroidMkEntries) SetBoolIfTrue(name string, flag bool) {
 	if flag {
 		if _, ok := a.EntryMap[name]; !ok {
@@ -255,6 +275,7 @@ func (a *AndroidMkEntries) fillInEntries(config Config, bpPath string, mod bluep
 		if Bool(amod.commonProperties.Vendor) || Bool(amod.commonProperties.Soc_specific) {
 			a.SetString("LOCAL_VENDOR_MODULE", "true")
 		}
+		a.SetBoolIfTrue("LOCAL_VENDOR_OVERLAY_MODULE", Bool(amod.commonProperties.Vendor_overlay))
 		a.SetBoolIfTrue("LOCAL_ODM_MODULE", Bool(amod.commonProperties.Device_specific))
 		a.SetBoolIfTrue("LOCAL_PRODUCT_MODULE", Bool(amod.commonProperties.Product_specific))
 		a.SetBoolIfTrue("LOCAL_SYSTEM_EXT_MODULE", Bool(amod.commonProperties.System_ext_specific))

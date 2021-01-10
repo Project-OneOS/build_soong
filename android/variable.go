@@ -71,6 +71,10 @@ type variableProperties struct {
 			Cflags []string
 		}
 
+		Target_init_vendor_lib struct {
+			Whole_static_libs []string
+		}
+
 		// debuggable is true for eng and userdebug builds, and can be used to turn on additional
 		// debugging features that don't significantly impact runtime behavior.  userdebug builds
 		// are used for dogfooding and performance testing, and should be as similar to user builds
@@ -280,6 +284,7 @@ type productVariables struct {
 	Experimental_mte *bool `json:",omitempty"`
 
 	VendorPath    *string `json:",omitempty"`
+	VendorOverlayPath   *string `json:",omitempty"`
 	OdmPath       *string `json:",omitempty"`
 	ProductPath   *string `json:",omitempty"`
 	SystemExtPath *string `json:",omitempty"`
@@ -372,6 +377,8 @@ type productVariables struct {
 	InstallExtraFlattenedApexes *bool `json:",omitempty"`
 
 	BoardUsesRecoveryAsBoot *bool `json:",omitempty"`
+
+	Target_init_vendor_lib  *string `json:",omitempty"`
 }
 
 func boolPtr(v bool) *bool {
