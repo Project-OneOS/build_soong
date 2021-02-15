@@ -166,6 +166,10 @@ var BannerVars = []string{
 	"PDK_FUSION_PLATFORM_ZIP",
 	"PRODUCT_SOONG_NAMESPACES",
         "QCOM_HARDWARE_VARIANT",
+        "TARGET_KERNEL_VERSION",
+        "TARGET_KERNEL_SOURCE",
+	"KERNEL_DEFCONFIG",
+        "BOARD_HAVE_QCOM_FM",
 }
 
 func Banner(make_vars map[string]string) string {
