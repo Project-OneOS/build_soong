@@ -170,6 +170,7 @@ var BannerVars = []string{
         "TARGET_KERNEL_SOURCE",
 	"KERNEL_DEFCONFIG",
         "BOARD_HAVE_QCOM_FM",
+        "PRODUCT_BOOT_JARS",
 }
 
 func Banner(make_vars map[string]string) string {
