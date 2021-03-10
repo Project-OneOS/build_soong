@@ -1041,7 +1041,15 @@ func (j *Module) collectDeps(ctx android.ModuleContext) deps {
 					// Normally the package rule runs aapt, which includes the resource,
 					// but we're not running that in our package rule so just copy in the
 					// resource files here.
-					deps.staticResourceJars = append(deps.staticResourceJars, dep.(*AndroidApp).exportPackage)
+					var exportPackage android.Path
+					if androidAppImport, ok := dep.(*AndroidAppImport); ok {
+						exportPackage = androidAppImport.ExportPackage()
+					} else {
+						exportPackage = dep.(*AndroidApp).exportPackage
+					}
+					if exportPackage != nil {
+						deps.staticResourceJars = append(deps.staticResourceJars, exportPackage)
+					}
 				}
 			case kotlinStdlibTag:
 				deps.kotlinStdlib = append(deps.kotlinStdlib, dep.HeaderJars()...)
@@ -2472,6 +2480,7 @@ type Import struct {
 
 	hiddenAPI
 	dexer
+	dexpreopter
 
 	properties ImportProperties
 
@@ -2524,6 +2533,10 @@ func (j *Import) Stem() string {
 
 func (a *Import) JacocoReportClassesFile() android.Path {
 	return nil
+}
+
+func (j *Import) LintDepSets() LintDepSets {
+	return LintDepSets{}
 }
 
 func (j *Import) DepsMutator(ctx android.BottomUpMutatorContext) {
@@ -2597,6 +2610,14 @@ func (j *Import) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 		}
 
 		// Dex compilation
+
+		j.dexpreopter.installPath = android.PathForModuleInstall(ctx, "framework", jarName)
+		if j.dexProperties.Uncompress_dex == nil {
+			// If the value was not force-set by the user, use reasonable default based on the module.
+			j.dexProperties.Uncompress_dex = proptools.BoolPtr(shouldUncompressDex(ctx, &j.dexpreopter))
+		}
+		j.dexpreopter.uncompressedDex = *j.dexProperties.Uncompress_dex
+
 		var dexOutputFile android.ModuleOutPath
 		dexOutputFile = j.dexer.compileDex(ctx, flags, j.minSdkVersion(), outputFile, jarName)
 		if ctx.Failed() {
@@ -2683,6 +2704,12 @@ func (j *Import) IDECustomizedModuleName() string {
 }
 
 var _ android.PrebuiltInterface = (*Import)(nil)
+
+func (j *Import) IsInstallable() bool {
+	return Bool(j.properties.Installable)
+}
+
+var _ dexpreopterInterface = (*Import)(nil)
 
 // java_import imports one or more `.jar` files into the build graph as if they were built by a java_library module.
 //
